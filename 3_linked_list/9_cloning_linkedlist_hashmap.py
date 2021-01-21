@@ -1,6 +1,6 @@
 class Node:
     def __init__(self,val):
-        self.val = val
+        self.val =val
         self.next = None
         self.random = None
 
@@ -14,14 +14,16 @@ class LinkedList:
         self.head = node
     
     def insert(self,val):
+        if not self.head:
+            self.head = Node(val)
+            return 
         temp = self.head
         while temp.next:
             temp = temp.next
-        node = Node(val)
-        temp.next = node
+        temp.next = Node(val)
     
     def display(self):
-        temp = self.head
+        temp =self.head
         while temp:
             nxt = temp.next.val if temp.next else None
             rnd = temp.random.val if temp.random else None
@@ -31,26 +33,30 @@ class LinkedList:
 
     def clone_random_linked_list(self):
         temp = self.head
-        clone_lst = LinkedList()
-        t = clone_lst.head = Node(temp.val)
+        hash = {}
+        
+        clone = LinkedList()     
+        clone.head = Node(temp.val)
+        temp2 = clone.head
+        hash[id(temp)] = temp2
+        
         while temp.next:
             temp = temp.next
-            t.next = Node(temp.val)
-            t= t.next
-        
+            node = Node(temp.val)
+            temp2.next = node
+            temp2 = temp2.next
+            hash[id(temp)] = temp2
+
         temp = self.head
-        t= clone_lst.head
-
+        temp2 = clone.head
         while temp:
-            rv = temp.random.val
-            t2 = clone_lst.head
-            while(t2.val!=rv):
-                t2 = t2.next
-            t.random = t2
-            t = t.next
-            temp =temp.next
-
-        return clone_lst
+            if temp.random is not None:
+                temp2.random = hash.get(id(temp.random))
+            else:
+                temp2.random = None
+            temp = temp.next
+            temp2 = temp2.next
+        return clone   
 
 if __name__ == "__main__":
     ll = LinkedList()
