@@ -69,5 +69,6 @@ if __name__ == '__main__':
         temp.next = Node(ele)
         temp = temp.next
     print(isPalindrome(head))
-
+    # Stack can also be used
     print(isPalindrome2(head))
+
