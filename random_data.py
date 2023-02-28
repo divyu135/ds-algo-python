@@ -67,7 +67,15 @@ def generate_sample_data_for_type(col_type, column_ranges):
     elif isinstance(col_type, bool):
         return random.choice([True, False])
     elif isinstance(col_type, StructType):
-        return {field.name: generate
+        return {field.name: generate_sample_data_for_type(field.dataType, column_ranges[field.name]) for field in col_type.fields}
+    elif isinstance(col_type, ArrayType):
+        if isinstance(col_type.elementType, StructType):
+            return [generate_sample_data_for_type(col_type.elementType, column_ranges[0])]
+        else:
+            return [generate_sample_data_for_type(col_type.elementType, column_ranges)]
+    else:
+        return None
+
 
 
 
