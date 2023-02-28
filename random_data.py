@@ -1,46 +1,47 @@
-from pyspark.sql.types import *
+def generate_random_data(schema):
+    """
+    Generate random data for the given schema.
+    """
+    if isinstance(schema, StructType):
+        return generate_struct(schema)
 
-def generate_random_data(schema, num_rows):
-    # Create empty list to hold rows of data
-    data = []
+    elif isinstance(schema, ArrayType):
+        return [generate_random_data(schema.elementType) for _ in range(random.randint(0, 5))]
 
-    # Generate data for each row
-    for i in range(num_rows):
-        # Create empty dictionary to hold data for this row
-        row_data = {}
+    else:
+        return generate_primitive(schema)
 
-        # Generate data for each column
-        for field in schema.fields:
-            # Get column name and data type
-            col_name = field.name
-            data_type = field.dataType
 
-            # Generate random data based on data type
-            if isinstance(data_type, StructType):
-                # Recursively generate random data for nested structs
-                col_data = generate_random_data(data_type, 1)[0]
-            elif isinstance(data_type, IntegerType):
-                col_data = randint(0, 100)
-            elif isinstance(data_type, LongType):
-                col_data = randint(0, 100000)
-            elif isinstance(data_type, StringType):
-                col_data = ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
-            elif isinstance(data_type, BooleanType):
-                col_data = bool(random.getrandbits(1))
-            elif isinstance(data_type, FloatType):
-                col_data = random.uniform(0, 1)
-            elif isinstance(data_type, DoubleType):
-                col_data = random.uniform(0, 1)
-            elif isinstance(data_type, DateType):
-                col_data = datetime.date.today() - datetime.timedelta(days=randint(0, 365))
-            else:
-                raise Exception(f"Data type {data_type} not supported")
+def generate_struct(schema):
+    """
+    Generate random StructType data for the given schema.
+    """
+    fields = []
+    for field in schema.fields:
+        name = field.name
+        data_type = field.dataType
+        value = generate_random_data(data_type)
+        fields.append((name, value))
+    return dict(fields)
 
-            # Add generated data to row dictionary
-            row_data[col_name] = col_data
 
-        # Add row dictionary to data list
-        data.append(row_data)
-
-    # Return data as Spark DataFrame
-    return spark.createDataFrame(data, schema)
+def generate_primitive(schema):
+    """
+    Generate random primitive data for the given schema.
+    """
+    if isinstance(schema, StringType):
+        return "string" + str(random.randint(1, 10))
+    elif isinstance(schema, IntegerType):
+        return random.randint(1, 100)
+    elif isinstance(schema, LongType):
+        return random.randint(1, 1000)
+    elif isinstance(schema, DoubleType):
+        return random.uniform(1, 10)
+    elif isinstance(schema, FloatType):
+        return random.uniform(1, 10)
+    elif isinstance(schema, BooleanType):
+        return bool(random.getrandbits(1))
+    elif isinstance(schema, DateType):
+        return str(random.randint(2000, 2023)) + "-" + str(random.randint(1, 12)) + "-" + str(random.randint(1, 28))
+    else:
+        return None
