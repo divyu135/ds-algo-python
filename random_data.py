@@ -1,44 +1,46 @@
-from pyspark.sql.functions import rand, randn
-from pyspark.sql import SparkSession
+from pyspark.sql.types import *
 
-# create spark session
-spark = SparkSession.builder.appName("RandomDataGenerator").getOrCreate()
+def generate_random_data(schema, num_rows):
+    # Create empty list to hold rows of data
+    data = []
 
-# function to generate random data for each field
-def generate_random_data(data_type):
-    if data_type == "string":
-        return rand()
-    elif data_type == "integer":
-        return (rand() * 1000).cast("integer")
-    elif data_type == "long":
-        return (rand() * 1000000000).cast("long")
-    elif data_type == "date":
-        return (rand() * 1000).cast("integer").cast("date")
-    elif isinstance(data_type, StructType):
-        return generate_random_struct(data_type)
-    else:
-        return None
+    # Generate data for each row
+    for i in range(num_rows):
+        # Create empty dictionary to hold data for this row
+        row_data = {}
 
-# function to generate random data for struct type fields
-def generate_random_struct(struct_type):
-    struct_fields = struct_type.fields
-    struct_dict = {}
-    for field in struct_fields:
-        field_name = field.name
-        field_data_type = field.dataType
-        field_data = generate_random_data(field_data_type)
-        struct_dict[field_name] = field_data
-    return struct_type(**struct_dict)
+        # Generate data for each column
+        for field in schema.fields:
+            # Get column name and data type
+            col_name = field.name
+            data_type = field.dataType
 
-# get column names and data types from schema
-column_names = [field.name for field in table_schema.fields]
-column_data_types = [field.dataType for field in table_schema.fields]
+            # Generate random data based on data type
+            if isinstance(data_type, StructType):
+                # Recursively generate random data for nested structs
+                col_data = generate_random_data(data_type, 1)[0]
+            elif isinstance(data_type, IntegerType):
+                col_data = randint(0, 100)
+            elif isinstance(data_type, LongType):
+                col_data = randint(0, 100000)
+            elif isinstance(data_type, StringType):
+                col_data = ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
+            elif isinstance(data_type, BooleanType):
+                col_data = bool(random.getrandbits(1))
+            elif isinstance(data_type, FloatType):
+                col_data = random.uniform(0, 1)
+            elif isinstance(data_type, DoubleType):
+                col_data = random.uniform(0, 1)
+            elif isinstance(data_type, DateType):
+                col_data = datetime.date.today() - datetime.timedelta(days=randint(0, 365))
+            else:
+                raise Exception(f"Data type {data_type} not supported")
 
-# generate random data for each column
-data = [generate_random_data(data_type) for data_type in column_data_types]
+            # Add generated data to row dictionary
+            row_data[col_name] = col_data
 
-# create dataframe with correct schema
-df = spark.createDataFrame([tuple(data)], schema=table_schema)
+        # Add row dictionary to data list
+        data.append(row_data)
 
-# show dataframe
-df.show()
+    # Return data as Spark DataFrame
+    return spark.createDataFrame(data, schema)
