@@ -6,7 +6,7 @@ from pyspark.sql.types import *
 def generate_random_data(data_type):
     if isinstance(data_type, StructType):
         fields_expr = [generate_random_data(field.dataType).alias(field.name) for field in data_type.fields]
-        return expr("struct(" + ",".join([f"`{f.name}`" for f in data_type.fields]) + ")").getField(*fields_expr)
+        return expr("struct(" + ",".join([f"`{f.name}`" for f in data_type.fields]) + ")").selectExpr(*[f"`{f.name}`" for f in data_type.fields])
     elif isinstance(data_type, ArrayType):
         return expr("array(" + generate_random_data(data_type.elementType) + ")")
     elif isinstance(data_type, MapType):
@@ -29,6 +29,7 @@ def generate_random_data(data_type):
         return expr("date_add(to_date('1970-01-01'), cast(rand() * 10000 as int))")
     else:
         return expr("null")
+
 
 # Create a SparkSession
 spark = SparkSession.builder \
