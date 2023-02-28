@@ -1,100 +1,55 @@
+from pyspark.sql.types import *
+from pyspark.sql.functions import udf, struct, array, col
+from datetime import datetime, timedelta
 import random
-import string
-import datetime
-import decimal
-from pyspark.sql import SparkSession
-from pyspark.sql.types import StructType, StructField, ArrayType
 
-
-def get_table_column_ranges(spark, table_name):
-    df = spark.table(table_name)
-    column_ranges = {}
-    for column in df.columns:
-        column_type = df.schema[column].dataType
-        if isinstance(column_type, (int, float, decimal.Decimal)):
-            column_ranges[column] = (df.agg({column: "min"}).collect()[0][0], df.agg({column: "max"}).collect()[0][0])
-        elif isinstance(column_type, str):
-            distinct_vals = df.select(column).distinct().rdd.map(lambda r: r[0]).collect()
-            if len(distinct_vals) == 1:
-                column_ranges[column] = len(distinct_vals[0])
-            elif all(val.isdigit() for val in distinct_vals):
-                column_ranges[column] = (min(int(val) for val in distinct_vals), max(int(val) for val in distinct_vals))
-            elif all(len(val) == 1 for val in distinct_vals):
-                column_ranges[column] = (min(ord(val) for val in distinct_vals), max(ord(val) for val in distinct_vals))
-            else:
-                column_ranges[column] = None
-        elif isinstance(column_type, (datetime.date, datetime.datetime)):
-            column_ranges[column] = (df.agg({column: "min"}).collect()[0][0], df.agg({column: "max"}).collect()[0][0])
-        elif isinstance(column_type, bool):
-            column_ranges[column] = None
-        elif isinstance(column_type, StructType):
-            column_ranges[column] = get_struct_column_ranges(column_type)
-        elif isinstance(column_type, ArrayType) and isinstance(column_type.elementType, StructType):
-            column_ranges[column] = [get_struct_column_ranges(column_type.elementType)]
-        else:
-            column_ranges[column] = None
-    return column_ranges
-
-
-def get_struct_column_ranges(struct_type):
-    struct_ranges = {}
-    for field in struct_type.fields:
-        field_type = field.dataType
-        if isinstance(field_type, StructType):
-            struct_ranges[field.name] = get_struct_column_ranges(field_type)
-        elif isinstance(field_type, ArrayType) and isinstance(field_type.elementType, StructType):
-            struct_ranges[field.name] = [get_struct_column_ranges(field_type.elementType)]
-        else:
-            struct_ranges[field.name] = (None, None)
-    return struct_ranges
-
-
-def generate_sample_data_for_type(col_type, column_ranges):
-    if isinstance(col_type, (int, float, decimal.Decimal)):
-        return random.uniform(column_ranges[0], column_ranges[1])
-    elif isinstance(col_type, str):
-        if is_character_range(column_ranges):
-            return "".join(random.choices(string.ascii_letters + string.digits, k=column_ranges))
-        elif isinstance(column_ranges, tuple) and all(isinstance(val, int) for val in column_ranges):
-            return str(random.randint(column_ranges[0], column_ranges[1]))
-        else:
-            return None
-    elif isinstance(col_type, (datetime.date, datetime.datetime)):
-        epoch_start = col_type.fromisoformat('1970-01-01')
-        start_seconds = (column_ranges[0] - epoch_start).total_seconds()
-        end_seconds = (column_ranges[1] - epoch_start).total_seconds()
-        return datetime.datetime.fromtimestamp(random.uniform(start_seconds, end_seconds)).isoformat()
-    elif isinstance(col_type, bool):
-        return random.choice([True, False])
-    elif isinstance(col_type, StructType):
-        return {field.name: generate_sample_data_for_type(field.dataType, column_ranges[field.name]) for field in col_type.fields}
-    elif isinstance(col_type, ArrayType):
-        if isinstance(col_type.elementType, StructType):
-            return [generate_sample_data_for_type(col_type.elementType, column_ranges[0])]
-        else:
-            return [generate_sample_data_for_type(col_type.elementType, column_ranges)]
-    else:
+# Define a function to generate random data for each data type
+def generate_random_data(data_type, nullable=True):
+    if nullable and random.random() < 0.1:
         return None
+    elif data_type == StringType():
+        return ''.join(random.choices(string.ascii_letters + string.digits, k=random.randint(1, 20)))
+    elif data_type == IntegerType():
+        return random.randint(-1000, 1000)
+    elif data_type == LongType():
+        return random.randint(-1000000, 1000000)
+    elif data_type == FloatType():
+        return random.uniform(-1000, 1000)
+    elif data_type == DoubleType():
+        return random.uniform(-1000000, 1000000)
+    elif data_type == BooleanType():
+        return random.choice([True, False])
+    elif data_type == DateType():
+        return datetime.today().date() + timedelta(days=random.randint(-365, 365))
+    elif data_type == TimestampType():
+        return datetime.now() + timedelta(seconds=random.randint(-3600, 3600))
+    elif isinstance(data_type, ArrayType):
+        inner_type = data_type.elementType
+        return [generate_random_data(inner_type) for _ in range(random.randint(1, 10))]
+    elif isinstance(data_type, StructType):
+        fields = data_type.fields
+        values = [generate_random_data(field.dataType) for field in fields]
+        return struct(*values)
+    else:
+        raise ValueError(f"Unsupported data type: {data_type}")
 
+# Define a function to generate random data for each column in the DataFrame
+def generate_random_dataframe(df):
+    struct_fields = [field for field in df.schema.fields if isinstance(field.dataType, StructType)]
+    array_fields = [field for field in df.schema.fields if isinstance(field.dataType, ArrayType) and not isinstance(field.dataType.elementType, StructType)]
 
+    # Define a UDF to generate random data for each row in the DataFrame
+    random_data_udf = udf(lambda _: struct(*[generate_random_data(field.dataType) for field in df.schema.fields]), df.schema)
 
+    # Apply the UDF to generate random data for each row in the DataFrame
+    random_df = df.select(random_data_udf(col("*")).alias("random_data"))
 
-from pyspark.sql import SparkSession
+    # Explode the struct fields to create columns for each field in the struct
+    for field in struct_fields:
+        random_df = random_df.selectExpr("random_data.*")
 
-# Create SparkSession
-spark = SparkSession.builder.appName("Generate Sample Data").getOrCreate()
+    # Explode the array fields to create a column for each element in the array
+    for field in array_fields:
+        random_df = random_df.withColumn(field.name, col(field.name).getItem(0))
 
-# Specify Hive table name
-table_name = "mytable"
-
-# Get column ranges for table
-column_ranges = get_table_column_ranges(spark, table_name)
-
-# Generate sample data for each column
-sample_data = {}
-for col_name, col_range in column_ranges.items():
-    sample_data[col_name] = generate_sample_data_for_type(col_range)
-
-# Print sample data
-for col_name, col_data in sample_data.items():
-    print(f"{col_name}: {col_data}")
+    return random_df
