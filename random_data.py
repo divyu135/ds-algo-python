@@ -5,7 +5,8 @@ from pyspark.sql.types import *
 # Define a function to generate random data for each column type
 def generate_random_data(data_type):
     if isinstance(data_type, StructType):
-        return expr("struct(" + ",".join([generate_random_data(field.dataType) for field in data_type.fields]) + ")")
+        fields_expr = [generate_random_data(field.dataType).alias(field.name) for field in data_type.fields]
+        return expr("struct(" + ",".join([f"`{f.name}`" for f in data_type.fields]) + ")").getField(*fields_expr)
     elif isinstance(data_type, ArrayType):
         return expr("array(" + generate_random_data(data_type.elementType) + ")")
     elif isinstance(data_type, MapType):
