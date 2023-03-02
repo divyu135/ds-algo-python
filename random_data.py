@@ -18,7 +18,7 @@ def generate_random_value(min_val, max_val, data_type):
     else:
         raise ValueError(f"Unsupported data type: {data_type}")
 
-def generate_random_data(df):
+def generate_random_data(df, num_rows=10):
     """
     Generates random data for a PySpark dataframe.
     """
@@ -28,7 +28,7 @@ def generate_random_data(df):
     # Loop through each column in the dataframe and generate a random value for each primitive type column
     for col_name, data_type in df.dtypes:
         if isinstance(data_type, StructType):
-            generate_random_data(df.withColumnRenamed(col_name, col_name + "_temp"))  # recursive call to handle nested structs
+            generate_random_data(df.withColumnRenamed(col_name, col_name + "_temp"), num_rows)  # recursive call to handle nested structs
             df = df.drop(col_name).withColumn(col_name, col(col_name + "_temp")).drop(col_name + "_temp")
         else:
             # Calculate the min and max values for the current column
@@ -36,6 +36,7 @@ def generate_random_data(df):
             col_max = df.selectExpr(f"max({col_name})").collect()[0][0]
 
             # Generate a random value for the current column and overwrite the existing values in the dataframe
-            df = df.withColumn(col_name, generate_random_udf(col(f"'{col_min}'"), col(f"'{col_max}'"), col(f"CAST('{data_type}' AS STRING)")))
+            random_values = [generate_random_udf(col(f"'{col_min}'"), col(f"'{col_max}'"), col(f"CAST('{data_type}' AS STRING)")).alias(col_name) for i in range(num_rows)]
+            df = df.limit(num_rows).select(random_values)
 
     return df
