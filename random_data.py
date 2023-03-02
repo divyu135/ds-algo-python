@@ -1,55 +1,39 @@
-from pyspark.sql.types import *
+from pyspark.sql.functions import rand, create_map, struct, size, col, lit, when
+from pyspark.sql.types import StructType, StructField, IntegerType, DoubleType, StringType, ArrayType, MapType
 
-def generate_struct(schema):
-    """
-    Generates random data for a StructType schema.
-    """
-    struct_data = {}
-    for field in schema.fields:
-        field_name = field.name
-        field_type = field.dataType
-        if isinstance(field_type, StructType):
-            struct_data[field_name] = generate_struct(field_type)
-        else:
-            struct_data[field_name] = generate_random_data(field_type)
-    return struct_data
+# Define a sample PySpark DataFrame with different data types
+df = spark.createDataFrame([(1, 2.0, "foo", [1, 2, 3], {'key1': 'value1', 'key2': 'value2'}, (4, "bar")),
+                            (2, 3.0, "bar", [4, 5], {'key3': 'value3', 'key4': 'value4'}, (5, "baz"))],
+                           ["col_int", "col_float", "col_string", "col_array", "col_map", "col_struct"])
 
-def generate_random_data(data_type):
-    """
-    Generates random data for a given data type.
-    """
-    if isinstance(data_type, StringType):
-        return ''.join(random.choice(string.ascii_letters) for i in range(10))
-    elif isinstance(data_type, IntegerType):
-        return random.randint(0, 100)
-    elif isinstance(data_type, LongType):
-        return random.randint(0, 100000000)
+# Define a function to generate random data based on the min-max range of a column
+def generate_random_data(min_val, max_val, data_type):
+    if isinstance(data_type, IntegerType):
+        return int(rand() * (max_val - min_val) + min_val)
     elif isinstance(data_type, DoubleType):
-        return random.random() * 100
-    elif isinstance(data_type, BooleanType):
-        return random.choice([True, False])
-    elif isinstance(data_type, DateType):
-        return datetime.date.today() - datetime.timedelta(days=random.randint(0, 365))
-    elif isinstance(data_type, TimestampType):
-        return datetime.datetime.now() - datetime.timedelta(seconds=random.randint(0, 3600))
+        return rand() * (max_val - min_val) + min_val
+    elif isinstance(data_type, StringType):
+        return str(rand() * (max_val - min_val) + min_val)
     elif isinstance(data_type, ArrayType):
-        return [generate_random_data(data_type.elementType) for i in range(3)]
+        return [generate_random_data(min_val, max_val, data_type.elementType) for _ in range(3)]
     elif isinstance(data_type, MapType):
-        return {generate_random_data(data_type.keyType): generate_random_data(data_type.valueType) for i in range(3)}
+        return create_map([lit(str(i)).alias("key"), generate_random_data(min_val, max_val, data_type.valueType).alias("value")] for i in range(2))
+    elif isinstance(data_type, StructType):
+        return struct([generate_random_data(min_val, max_val, field.dataType).alias(field.name) for field in data_type.fields])
     else:
         return None
 
-def generate_data(schema):
-    """
-    Generates random data for a given schema.
-    """
-    table_data = []
-    for field in schema.fields:
-        field_name = field.name
-        field_type = field.dataType
-        if isinstance(field_type, StructType):
-            struct_data = generate_struct(field_type)
-            table_data.append(struct_data)
-        else:
-            table_data.append(generate_random_data(field_type))
-    return table_data
+# Generate random data for each column based on the min-max range of the DataFrame
+df_min = df.select([col(column).alias("min_" + column) for column in df.columns])
+df_max = df.select([col(column).alias("max_" + column) for column in df.columns])
+
+min_values = df_min.first()
+max_values = df_max.first()
+
+random_data = [generate_random_data(min_val, max_val, data_type) for (min_val, max_val, data_type) in zip(min_values, max_values, df.schema.fields)]
+
+# Create a new PySpark DataFrame with the generated random data
+random_df = spark.createDataFrame([tuple(random_data)], schema=df.schema)
+
+# Show the generated random data DataFrame
+random_df.show()
