@@ -24,8 +24,8 @@ def generate_random_data(min_val, max_val, data_type):
         return None
 
 # Generate random data for each column based on the min-max range of the DataFrame
-df_min = df.select([col(column).alias("min_" + column) for column in df.columns])
-df_max = df.select([col(column).alias("max_" + column) for column in df.columns])
+df_min = df.agg(*(min(col(column)).alias(column) for column in df.columns))
+df_max = df.agg(*(max(col(column)).alias(column) for column in df.columns))
 
 min_values = df_min.first()
 max_values = df_max.first()
