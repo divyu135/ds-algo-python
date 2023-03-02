@@ -1,42 +1,42 @@
-from pyspark.sql.functions import rand, col, udf
-from pyspark.sql.types import StructType, StructField, StringType, IntegerType, FloatType, DateType, TimestampType
-
-def generate_random_value(min_val, max_val, data_type):
+def generate_data(schema, df):
     """
-    Helper function to generate a random value based on a given data type and its min/max range.
+    Generates random data for a given schema based on the min/max range in a Spark DataFrame.
     """
-    if data_type == IntegerType():
-        return int(rand() * (max_val - min_val + 1) + min_val)
-    elif data_type == FloatType():
-        return rand() * (max_val - min_val) + min_val
-    elif data_type == StringType():
-        return ''.join([chr(int(rand() * 26) + 97) for i in range(max_val)])  # generate a random string of lowercase letters
-    elif data_type == DateType():
-        return datetime.date.fromordinal(int(rand() * (max_val - min_val + 1)) + min_val)
-    elif data_type == TimestampType():
-        return datetime.datetime.fromordinal(int(rand() * (max_val - min_val + 1)) + min_val)
-    else:
-        raise ValueError(f"Unsupported data type: {data_type}")
-
-def generate_random_data(df, num_rows=10):
-    """
-    Generates random data for a PySpark dataframe.
-    """
-    # Define a UDF to generate a random value for each primitive type column
-    generate_random_udf = udf(lambda min_val, max_val, data_type: generate_random_value(min_val, max_val, data_type))
-
-    # Loop through each column in the dataframe and generate a random value for each primitive type column
-    for col_name, data_type in df.dtypes:
-        if isinstance(data_type, StructType):
-            generate_random_data(df.withColumnRenamed(col_name, col_name + "_temp"), num_rows)  # recursive call to handle nested structs
-            df = df.drop(col_name).withColumn(col_name, col(col_name + "_temp")).drop(col_name + "_temp")
+    table_data = []
+    for field in schema.fields:
+        field_name = field.name
+        field_type = field.dataType
+        if isinstance(field_type, StructType):
+            struct_data = generate_struct(field_type)
+            table_data.append(struct_data)
         else:
-            # Calculate the min and max values for the current column
-            col_min = df.selectExpr(f"min({col_name})").collect()[0][0]
-            col_max = df.selectExpr(f"max({col_name})").collect()[0][0]
-
-            # Generate a random value for the current column and overwrite the existing values in the dataframe
-            random_values = [generate_random_udf(col(f"'{col_min}'"), col(f"'{col_max}'"), col(f"CAST('{data_type}' AS STRING)")).alias(col_name) for i in range(num_rows)]
-            df = df.limit(num_rows).select(random_values)
-
-    return df
+            col_min, col_max = df.selectExpr("min({})".format(field_name), "max({})".format(field_name)).first()
+            if isinstance(field_type, StringType):
+                table_data.append(''.join(random.choice(string.ascii_letters) for i in range(10)))
+            elif isinstance(field_type, IntegerType):
+                table_data.append(random.randint(col_min, col_max))
+            elif isinstance(field_type, LongType):
+                table_data.append(random.randint(col_min, col_max))
+            elif isinstance(field_type, DoubleType):
+                table_data.append(random.uniform(col_min, col_max))
+            elif isinstance(field_type, BooleanType):
+                table_data.append(random.choice([True, False]))
+            elif isinstance(field_type, DateType):
+                col_min_date = datetime.datetime.strptime(col_min, "%Y-%m-%d").date()
+                col_max_date = datetime.datetime.strptime(col_max, "%Y-%m-%d").date()
+                random_date = col_min_date + datetime.timedelta(days=random.randint(0, (col_max_date - col_min_date).days))
+                table_data.append(random_date)
+            elif isinstance(field_type, TimestampType):
+                col_min_time = datetime.datetime.strptime(col_min, "%Y-%m-%d %H:%M:%S")
+                col_max_time = datetime.datetime.strptime(col_max, "%Y-%m-%d %H:%M:%S")
+                random_time = col_min_time + datetime.timedelta(seconds=random.randint(0, (col_max_time - col_min_time).total_seconds()))
+                table_data.append(random_time)
+            elif isinstance(field_type, ArrayType):
+                array_data = [generate_random_data(field_type.elementType) for i in range(3)]
+                table_data.append(array_data)
+            elif isinstance(field_type, MapType):
+                map_data = {generate_random_data(field_type.keyType): generate_random_data(field_type.valueType) for i in range(3)}
+                table_data.append(map_data)
+            else:
+                table_data.append(None)
+    return table_data
