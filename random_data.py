@@ -1,47 +1,41 @@
-import random
-from pyspark.sql.functions import explode, col, rand
+from pyspark.sql.functions import rand, col, udf
+from pyspark.sql.types import StructType, StructField, StringType, IntegerType, FloatType, DateType, TimestampType
 
-# Define a PySpark DataFrame
-df = ...
-
-# Define a function to generate random values based on min and max values of a column
 def generate_random_value(min_val, max_val, data_type):
-    if data_type == "integer":
-        return random.randint(min_val, max_val)
-    elif data_type == "double":
-        return round(random.uniform(min_val, max_val), 2)
-    elif data_type == "boolean":
-        return random.choice([True, False])
-    elif data_type == "string":
-        return ''.join(random.choices(string.ascii_letters + string.digits, k=random.randint(min_val, max_val)))
-    elif data_type == "date":
-        return (datetime.date.today() - datetime.timedelta(days=random.randint(min_val, max_val))).strftime('%Y-%m-%d')
+    """
+    Helper function to generate a random value based on a given data type and its min/max range.
+    """
+    if data_type == IntegerType():
+        return int(rand() * (max_val - min_val + 1) + min_val)
+    elif data_type == FloatType():
+        return rand() * (max_val - min_val) + min_val
+    elif data_type == StringType():
+        return ''.join([chr(int(rand() * 26) + 97) for i in range(max_val)])  # generate a random string of lowercase letters
+    elif data_type == DateType():
+        return datetime.date.fromordinal(int(rand() * (max_val - min_val + 1)) + min_val)
+    elif data_type == TimestampType():
+        return datetime.datetime.fromordinal(int(rand() * (max_val - min_val + 1)) + min_val)
     else:
-        return None
+        raise ValueError(f"Unsupported data type: {data_type}")
 
-# Define a function to unnest complex types and generate random values
-def generate_random_row(row):
-    for col_name, data_type in row.dtypes:
-        if "struct" in data_type:
-            for field_name, field_type in row.select(col(col_name + ".*")).schema.fields:
-                min_val, max_val = row.select(col_name + "." + field_name).agg({"*": "min"}, {"*": "max"}).first()
-                row[col_name + "_" + field_name] = generate_random_value(min_val, max_val, field_type.typeName())
-            row = row.drop(col_name)
-        elif "array" in data_type:
-            row = row.withColumn(col_name, explode(col(col_name)))
-        elif "map" in data_type:
-            pass # handle map type here
+def generate_random_data(df):
+    """
+    Generates random data for a PySpark dataframe.
+    """
+    # Define a UDF to generate a random value for each primitive type column
+    generate_random_udf = udf(lambda min_val, max_val, data_type: generate_random_value(min_val, max_val, data_type))
+
+    # Loop through each column in the dataframe and generate a random value for each primitive type column
+    for col_name, data_type in df.dtypes:
+        if isinstance(data_type, StructType):
+            generate_random_data(df.withColumnRenamed(col_name, col_name + "_temp"))  # recursive call to handle nested structs
+            df = df.drop(col_name).withColumn(col_name, col(col_name + "_temp")).drop(col_name + "_temp")
         else:
-            min_val, max_val = row.agg({col_name: "min"}, {col_name: "max"}).first()
-            row[col_name] = generate_random_value(min_val, max_val, data_type)
-    return row
+            # Calculate the min and max values for the current column
+            col_min = df.selectExpr(f"min({col_name})").collect()[0][0]
+            col_max = df.selectExpr(f"max({col_name})").collect()[0][0]
 
-# Generate 10 random rows of data
-result = df.sample(False, 0.1, seed=42).limit(10).\
-    select("*").\
-    selectExpr("*", "rand() as random").\
-    orderBy("random").\
-    drop("random").\
-    rdd.map(generate_random_row).toDF()
-    
-result.show()
+            # Generate a random value for the current column and overwrite the existing values in the dataframe
+            df = df.withColumn(col_name, generate_random_udf(col(f"'{col_min}'"), col(f"'{col_max}'"), col(f"CAST('{data_type}' AS STRING)")))
+
+    return df
